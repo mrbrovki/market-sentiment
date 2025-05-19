@@ -1,4 +1,4 @@
-package com.example.demo.api;
+package com.devbrovki.sentiment.api;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;

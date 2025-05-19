@@ -1,4 +1,4 @@
-package com.example.demo.model;
+package com.devbrovki.sentiment.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
@@ -11,8 +11,10 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Builder
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class Result {
+public class Event {
     private String url;
     private String title;
+    private String content;
+    private String id;
     private long timeStamp;
 }
