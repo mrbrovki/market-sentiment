@@ -2,8 +2,9 @@ services:
   kafka:
     image: 'bitnami/kafka:latest'
     ports:
-      - '9094:9094' #1
+      - '9094:9094'
     environment:
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=false
       - KAFKA_CFG_NODE_ID=0
       - KAFKA_CFG_CONTROLLER_BROKER_ID=0
       - KAFKA_CFG_PROCESS_ROLES=controller,broker
@@ -12,7 +13,14 @@ services:
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT #4
       - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
-
+  kafka-admin:
+    build: 
+      context: './services/admin'
+      dockerfile: Dockerfile
+    depends_on:
+      - kafka
+    environment:
+      - BOOTSTRAP_SERVER=kafka:9092
   kafka-ui:
     image: 'provectuslabs/kafka-ui:latest'
     ports:
@@ -20,27 +28,90 @@ services:
     depends_on:
       - kafka
     environment:
-      - KAFKA_CLUSTERS_0_NAME=local #5
-      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092 #6
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092 
+  #nlp:
+  #  build: 
+  #    context: './services/nlp'
+  #    dockerfile: Dockerfile
+  #  depends_on:
+  #    - kafka
 
-  nlp:
+  #logger:
+  #  build: 
+  #      context: './services/logger'
+  #      dockerfile: Dockerfile
+  #  environment:
+  #    - BOOTSTRAP_SERVERS=kafka:9092
+  #  volumes:
+  #    - logger:/csv
+  #  depends_on:
+  #      - kafka
+
+  firefox:
+    image: selenium/standalone-firefox
+    environment:
+          - START_XVFB=false
+          - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+          - SE_NODE_MAX_SESSIONS=4
+          - JAVA_OPTS=-XX:ActiveProcessorCount=6
+    ports:
+      - "4444:4444"
+      - "7900:7900"
+
+
+  scraper:
     build: 
-      context: './services/nlp'
-      dockerfile: Dockerfile
-    depends_on:
-      - kafka
-  demo:
-    build: 
-        context: './services/demo'
+        context: './services/scraper'
         dockerfile: Dockerfile
     environment:
       - CRYPTO_PANIC_KEY=${CRYPTO_PANIC_KEY}
+      - BOOTSTRAP_SERVERS=kafka:9092
+      - SELENIUM_URL=http://firefox:4444/wd/hub
+      - INVESTING_DOT_COM_PAGES=300
     depends_on:
         - kafka
-  consumer:
+        - firefox
+
+  #consumer:
+  #  build: 
+  #    context: './services/consumer'
+  #    dockerfile: Dockerfile
+  #  depends_on:
+  #    - kafka
+
+  #backend:
+  #  build: 
+  #    context: './services/backend'
+  #    dockerfile: Dockerfile
+  #  depends_on:
+  #    - kafka
+  #  ports:
+  #    - '6969:6969' 
+
+  gemini:
     build: 
-      context: './services/consumer'
+      context: './services/gemini'
       dockerfile: Dockerfile
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - HTTP_ENDPOINT=${HTTP_ENDPOINT}
+      - KAFKA_BROKER=kafka:9092
+      - INPUT_TOPIC=events
+      - OUTPUT_TOPIC=sentiment-gemini
     depends_on:
       - kafka
-  
+
+  #chart:
+  #  build: 
+  #    context: './services/chart'
+  #    dockerfile: Dockerfile
+  #  volumes:
+  #    - csv_data:/data
+  #  depends_on:
+  #    - kafka
+
+volumes:
+  csv_data:
+  logger:
+

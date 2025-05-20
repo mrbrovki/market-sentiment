@@ -11,11 +11,13 @@ import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.PageLoadStrategy;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.firefox.FirefoxOptions;
+import org.openqa.selenium.firefox.FirefoxProfile;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Scope;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -26,10 +28,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Locale;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,7 +40,7 @@ public class InvestingDotComStrategy implements Strategy{
     private final KafkaTemplate<String, Event> kafkaTemplate;
     FirefoxOptions options;
 
-    private String lastArticleLink = null;
+    private final Map<String, Long> readArticlesMap = new ConcurrentHashMap<>();
 
     @Value("${remote.web.driver}")
     private String remoteWebDriverUrl;
@@ -62,6 +62,7 @@ public class InvestingDotComStrategy implements Strategy{
     @PostConstruct
     public void initDriver(){
         options = new FirefoxOptions();
+
         options.addArguments("-headless");
         options.addArguments("--disable-gpu");
         options.addArguments("--no-sandbox");
@@ -83,7 +84,7 @@ public class InvestingDotComStrategy implements Strategy{
             throw new RuntimeException(e);
         }
 
-        this.driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(60));
+        this.driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(30));
     }
 
     private boolean isHistorical = true;
@@ -111,27 +112,35 @@ public class InvestingDotComStrategy implements Strategy{
     }
 
     private boolean realtime(Asset asset, int page, int partition) {
-        Elements articles = getArticlesWithRetry(asset, page, 3);
-
-        if(page == 1 && !articles.isEmpty()){
-            this.lastArticleLink = getLinkInfo(articles.getFirst())[0];
-        }
+        Elements articles = getArticlesWithRetry(asset, page, 5);
+        long now = System.currentTimeMillis();
+        long maxAge = 7 * 86_400_000;
+        boolean done = false;
 
         for (Element article : articles) {
-            String[] linkInfo = getLinkInfo(article);
+            if(readArticlesMap.containsKey(getAbsoluteLink(article))){
+               continue;
+            }
 
-            if(!linkInfo[0].equals(this.lastArticleLink)){
-                handleArticle(article, partition, asset);
-            }else{
-                return true;
+            Event event = handleArticle(article, partition, asset);
+
+            if(event.getTimeStamp() == 0){
+                continue;
+            }
+
+            readArticlesMap.put(getAbsoluteLink(article), event.getTimeStamp());
+
+            if(event.getTimeStamp() <= now - maxAge){
+                done = true;
             }
         }
 
-        return false;
+        return done;
     }
 
-    private String[] getLinkInfo(Element article){
-        String[] arr = new String[2];
+
+
+    private String getAbsoluteLink(Element article){
         String baseUrl = "https://www.investing.com";
         Elements anchors = article.getElementsByTag("a");
         if (anchors.isEmpty()){
@@ -142,9 +151,7 @@ public class InvestingDotComStrategy implements Strategy{
         if (!href.startsWith("http")) {
             href = baseUrl + href;
         }
-        arr[0] = href;
-        arr[1] = anchor.text();
-        return arr;
+        return href;
     }
 
     private void historical(Asset asset, int page, int partition) {
@@ -152,11 +159,11 @@ public class InvestingDotComStrategy implements Strategy{
 
         Collections.reverse(articles);
         for (Element article : articles) {
-            handleArticle(article, partition, asset);
-        }
+            Event event = handleArticle(article, partition, asset);
 
-        if (!articles.isEmpty()) {
-            this.lastArticleLink = getLinkInfo(articles.getLast())[0];
+            if(event.getTimeStamp() >= System.currentTimeMillis() - (31L * 24 * 60 * 60 * 1000)){
+                readArticlesMap.put(getAbsoluteLink(article), event.getTimeStamp());
+            }
         }
     }
 
@@ -170,105 +177,116 @@ public class InvestingDotComStrategy implements Strategy{
         event.setTimeStamp(0);
         Elements spans = null;
 
-        try {
-            String pageSource = getPageSourceWithRetry(url);
+        int attempts = 0;
 
-            Document document = Jsoup.parse(pageSource);
+        while (event.getTimeStamp() == 0 && attempts < 5) {
+            attempts++;
+            try {
+                String pageSource = getPageSourceWithRetry(url);
 
-            // Extract the article content
-            Element articleEl = document.getElementById("article");
-            if (articleEl != null) {
-                event.setContent(articleEl.text());
-            }
+                Document document = Jsoup.parse(pageSource);
 
-            // Parse the published date and time from spans
-            spans = document.getElementsByTag("span");
-        } catch (Exception e) {
-            System.err.println("Failed to parse pageSource: " + e.getMessage());
-        }
-
-        if(spans == null) {return;}
-        for (Element span : spans) {
-            Pattern pattern1 = Pattern.compile("[A-Z][a-z][a-z] [0-9][0-9], [0-9]{4} [0-2][0-9]:[0-5][0-9](AM|PM)");
-            Matcher matcher1 = pattern1.matcher(span.text());
-
-            if(matcher1.find()) {
-                try {
-                    String date = matcher1.group();
-                    System.out.println("Found date: " + date);
-
-                    // Define the formatter
-                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy hh:mma", Locale.US);
-
-                    // Parse the date
-                    LocalDateTime dateTime = LocalDateTime.parse(date, formatter);
-
-                    // Convert to epoch milliseconds (start of day in specified time zone)
-                    long timestamp = dateTime
-                            .atZone(ZoneId.of("America/New_York"))
-                            .toInstant()
-                            .toEpochMilli();
-
-                    event.setTimeStamp(timestamp);
-                }catch (DateTimeParseException e) {
-                    System.err.println(Arrays.toString(span.text().toCharArray()));
+                // Extract the article title
+                Element titleEl = document.getElementById("articleTitle");
+                if (titleEl != null) {
+                    event.setTitle(titleEl.text());
                 }
-                break;
-            }
 
-            Pattern pattern2 = Pattern.compile("[A-Z][a-z][a-z] [0-9][0-9], [0-9]{4}");
-            Matcher matcher2 = pattern2.matcher(span.text());
-
-            if(matcher2.find()) {
-                try {
-                    String date = matcher2.group();
-                    System.out.println("Found date: " + date);
-
-                    // Define the formatter
-                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy", Locale.US);
-
-                    // Parse the date
-                    LocalDate localDate = LocalDate.parse(date, formatter);
-
-                    // Convert to epoch milliseconds (start of day in specified time zone)
-                    long timestamp = localDate
-                            .atStartOfDay(ZoneId.of("America/New_York"))
-                            .toInstant()
-                            .toEpochMilli();
-
-                    event.setTimeStamp(timestamp);
-                }catch (DateTimeParseException e) {
-                    System.err.println(Arrays.toString(span.text().toCharArray()));
+                // Extract the article content
+                Element articleEl = document.getElementById("article");
+                if (articleEl != null) {
+                    event.setContent(articleEl.text());
                 }
-                break;
+
+                // Parse the published date and time from spans
+                spans = document.getElementsByTag("span");
+            } catch (Exception e) {
+                System.err.println("Failed to parse pageSource: " + e.getMessage());
             }
 
-            if (span.text().startsWith("Published")) {
-                String[] parts = span.text().split(" ");
-                if (parts.length >= 4) {
+            if(spans == null) {return;}
+            for (Element span : spans) {
+                Pattern pattern1 = Pattern.compile("[A-Z][a-z][a-z] [0-9][0-9], [0-9]{4} [0-2][0-9]:[0-5][0-9](AM|PM)");
+                Matcher matcher1 = pattern1.matcher(span.text());
+
+                if(matcher1.find()) {
                     try {
-                        // Remove the comma from the date portion
-                        String datePart = parts[1].replace(",", "");
-                        String timeString = datePart + " " + parts[2] + " " + parts[3];
+                        String date = matcher1.group();
+                        System.out.println("Found date: " + date);
 
-                        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy hh:mm a", Locale.US);
-                        LocalDateTime dateTime = LocalDateTime.parse(timeString, formatter);
+                        // Define the formatter
+                        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy hh:mma", Locale.US);
 
+                        // Parse the date
+                        LocalDateTime dateTime = LocalDateTime.parse(date, formatter);
+
+                        // Convert to epoch milliseconds (start of day in specified time zone)
                         long timestamp = dateTime
                                 .atZone(ZoneId.of("America/New_York"))
                                 .toInstant()
                                 .toEpochMilli();
 
                         event.setTimeStamp(timestamp);
-                    } catch (DateTimeParseException e) {
-                        System.err.println("Failed to parse datetime: " + e.getMessage());
+                    }catch (DateTimeParseException e) {
+                        System.err.println(Arrays.toString(span.text().toCharArray()));
                     }
-                } else {
-                    System.err.println("Unexpected Published string format: " + span.text());
+                    break;
                 }
-                break;
-            }
 
+                Pattern pattern2 = Pattern.compile("[A-Z][a-z][a-z] [0-9][0-9], [0-9]{4}");
+                Matcher matcher2 = pattern2.matcher(span.text());
+
+                if(matcher2.find()) {
+                    try {
+                        String date = matcher2.group();
+                        System.out.println("Found date: " + date);
+
+                        // Define the formatter
+                        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM dd, yyyy", Locale.US);
+
+                        // Parse the date
+                        LocalDate localDate = LocalDate.parse(date, formatter);
+
+                        // Convert to epoch milliseconds (start of day in specified time zone)
+                        long timestamp = localDate
+                                .atStartOfDay(ZoneId.of("America/New_York"))
+                                .toInstant()
+                                .toEpochMilli();
+
+                        event.setTimeStamp(timestamp);
+                    }catch (DateTimeParseException e) {
+                        System.err.println(Arrays.toString(span.text().toCharArray()));
+                    }
+                    break;
+                }
+
+                if (span.text().startsWith("Published")) {
+                    String[] parts = span.text().split(" ");
+                    if (parts.length >= 4) {
+                        try {
+                            // Remove the comma from the date portion
+                            String datePart = parts[1].replace(",", "");
+                            String timeString = datePart + " " + parts[2] + " " + parts[3];
+
+                            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy hh:mm a", Locale.US);
+                            LocalDateTime dateTime = LocalDateTime.parse(timeString, formatter);
+
+                            long timestamp = dateTime
+                                    .atZone(ZoneId.of("America/New_York"))
+                                    .toInstant()
+                                    .toEpochMilli();
+
+                            event.setTimeStamp(timestamp);
+                        } catch (DateTimeParseException e) {
+                            System.err.println("Failed to parse datetime: " + e.getMessage());
+                        }
+                    } else {
+                        System.err.println("Unexpected Published string format: " + span.text());
+                    }
+                    break;
+                }
+
+            }
         }
     }
 
@@ -317,17 +335,23 @@ public class InvestingDotComStrategy implements Strategy{
         return pageSource;
     }
 
-    private void handleArticle(Element article, int partition, Asset asset) {
+    private Event handleArticle(Element article, int partition, Asset asset) {
         Event event = new Event();
-        String[] linkInfo = getLinkInfo(article);
-        event.setTitle(linkInfo[1]);
 
-        readArticle(linkInfo[0], event);
+        readArticle(getAbsoluteLink(article), event);
 
         event.setId(UUID.randomUUID().toString());
 
-        sendUpdateToKafka(event, partition, asset.getSource());
+        if(event.getTimeStamp() != 0){
+            sendUpdateToKafka(event, partition, asset.getSource());
+        }
+        else {
+            System.err.println("No Timestamp " + event.toString());
+        }
+
+        return event;
     }
+
 
     private void clearBrowserState() {
         try {
@@ -337,5 +361,14 @@ public class InvestingDotComStrategy implements Strategy{
         } catch (Exception e) {
             System.err.println("Could not clear browser state: " + e.getMessage());
         }
+    }
+
+
+    //  once per day
+    @Scheduled(fixedRate = 86_400_000, initialDelay = 86_400_000)
+    public void cleanup() {
+        long now = System.currentTimeMillis();
+        long threshold = now - (31L * 86_400_000); // 31 days in millis
+        readArticlesMap.entrySet().removeIf(entry -> entry.getValue() < threshold);
     }
 }

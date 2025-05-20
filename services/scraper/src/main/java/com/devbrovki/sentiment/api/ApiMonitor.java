@@ -1,6 +1,7 @@
 package com.devbrovki.sentiment.api;
 
 import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -17,6 +18,8 @@ import java.util.concurrent.ExecutorService;
 
 @Component
 public class ApiMonitor {
+    @Value("${investing.com.pages}")
+    private int pages;
 
     private final ExecutorService executor;
 
@@ -43,7 +46,7 @@ public class ApiMonitor {
                 Asset asset = Asset.builder()
                         .name(parts[0])
                         .url(parts[1])
-                        .pages(Integer.parseInt(parts[2]))
+                        .pages(pages)
                         .source(parts[3])
                         .build();
                 this.assets.add(asset);
@@ -60,11 +63,11 @@ public class ApiMonitor {
         }
     }
 
-    @Scheduled(fixedDelay = 60000, initialDelay = 0)
+    @Scheduled(fixedDelay = 60000, initialDelay = 60000)
     public void monitorApis() {
         for (int i = 0; i < strategies.size(); i++) {
-            if(strategies.get(i).isFinished){
-                int finalI = i;
+            int finalI = i;
+            if(strategies.get(finalI).isFinished){
                 executor.execute(() -> {
                     Context context = new Context();
                     context.setAsset(assets.get(finalI));
