@@ -15,13 +15,14 @@ import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Component
 public class ApiMonitor {
     @Value("${investing.com.pages}")
     private int pages;
 
-    private final ExecutorService executor;
+    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     public List<Asset> assets = new LinkedList<>();
 
@@ -29,9 +30,8 @@ public class ApiMonitor {
 
     private final List<InvestingDotComStrategy> strategies = new ArrayList<>();
 
-    public ApiMonitor(ApplicationContext applicationContext, ExecutorService executor) {
+    public ApiMonitor(ApplicationContext applicationContext) {
         this.applicationContext = applicationContext;
-        this.executor = executor;
     }
 
     @PostConstruct
@@ -63,18 +63,26 @@ public class ApiMonitor {
         }
     }
 
-    @Scheduled(fixedDelay = 60000, initialDelay = 60000)
+    @Scheduled(fixedDelay = 60_000, initialDelay = 0)
     public void monitorApis() {
         for (int i = 0; i < strategies.size(); i++) {
             int finalI = i;
             if(strategies.get(finalI).isFinished){
-                executor.execute(() -> {
+                executor.submit(() -> {
                     Context context = new Context();
                     context.setAsset(assets.get(finalI));
                     context.setPartition(finalI);
                     context.executeStrategy(strategies.get(finalI));
                 });
             }
+        }
+    }
+
+    //  once per day
+    @Scheduled(fixedRate = 86_400_000, initialDelay = 28_800_000)
+    private void cleanup(){
+        for (Strategy strategy : strategies) {
+            strategy.cleanup();
         }
     }
 }

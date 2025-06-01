@@ -10,4 +10,8 @@ public class Context {
     public void executeStrategy(Strategy strategy) {
         strategy.execute(asset, partition);
     }
+
+    public void cleanup(Strategy strategy) {
+        strategy.cleanup();
+    }
 }

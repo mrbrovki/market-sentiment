@@ -17,4 +17,4 @@ COPY --from=builder /app/target/*.jar app.jar
 COPY wait-for-it.sh /usr/local/bin/wait-for-it.sh
 RUN chmod +x /usr/local/bin/wait-for-it.sh
 
-CMD ["wait-for-it.sh", "firefox:4444", "--", "java", "-jar", "app.jar"]
+CMD ["wait-for-it.sh", "firefox:4444", "--", "java", "-Xms512m", "-Xmx4g" ,"-jar", "app.jar"]
