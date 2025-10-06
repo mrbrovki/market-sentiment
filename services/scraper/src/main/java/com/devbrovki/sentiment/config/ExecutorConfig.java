@@ -1,4 +1,4 @@
-package com.devbrovki.sentiment.api;
+package com.devbrovki.sentiment.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -8,9 +8,8 @@ import java.util.concurrent.Executors;
 
 @Configuration
 public class ExecutorConfig {
-    @Bean(destroyMethod = "shutdown")
-    public ExecutorService assetExecutor() {
-        // exactly 8 threads; additional tasks queue up
-        return Executors.newFixedThreadPool(8);
+    @Bean
+    public ExecutorService executorService(){
+     return Executors.newVirtualThreadPerTaskExecutor();
     }
 }

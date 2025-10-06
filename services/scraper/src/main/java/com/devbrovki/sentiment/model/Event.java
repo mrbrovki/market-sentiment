@@ -12,6 +12,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Event {
+    private String asset;
+    private String source;
     private String url;
     private String title;
     private String content;

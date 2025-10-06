@@ -1,5 +1,5 @@
 name,url,pages,source
-Apple,https://www.investing.com/equities/apple-computer-inc-news/{page},8,investing
-Microsoft,https://www.investing.com/equities/microsoft-corp-news/{page},8,investing
-Tesla,https://www.investing.com/equities/tesla-motors-news/{page},8,investing
-Meta,https://www.investing.com/equities/facebook-inc-news/{page},8,investing
+AMD,https://www.investing.com/equities/adv-micro-device-news/{page},428,https://www.investing.com
+INTC,https://www.investing.com/equities/intel-corp-news/{page},729,https://www.investing.com
+IBM,https://www.investing.com/equities/ibm-news/{page},299,https://www.investing.com
+META,https://www.investing.com/equities/facebook-inc-news/{page},1000,https://www.investing.com

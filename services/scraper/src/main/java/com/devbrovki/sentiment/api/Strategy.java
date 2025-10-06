@@ -1,7 +1,12 @@
 package com.devbrovki.sentiment.api;
 
 
+import java.util.List;
+
 public interface Strategy {
-    void execute(Asset asset, int partition);
+    void execute();
     void cleanup();
+    boolean isFinished();
+
+    void init(Asset asset, List<String> userAgents);
 }
