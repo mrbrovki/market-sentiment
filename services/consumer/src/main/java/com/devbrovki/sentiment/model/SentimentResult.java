@@ -1,4 +1,4 @@
-package com.example.demo;
+package com.devbrovki.sentiment.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -9,7 +9,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Result {
+public class SentimentResult {
     private String url;
     private String title;
+    private String content;
+    private String id;
+    private long timeStamp;
+    private double score;
 }
+
