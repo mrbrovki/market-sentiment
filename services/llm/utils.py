@@ -1,6 +1,8 @@
 import json
-from config import logger
+from config import logger, WOL_ENDPOINT
 import os
+import requests
+
 
 def extract_scores_remote_LLM(api_json):
     results = []
@@ -23,11 +25,9 @@ def extract_scores_remote_LLM(api_json):
 
 def extract_scores_local_LLM(api_json):
     results = []
-
     response = api_json.get("choices", [])[0].get("message", {}).get("content", "")
     word = "</think>"
     index = response.find(word)
-
     text = response[index + len(word):].lstrip() if index != -1 else response
 
     firstIndex = text.find("[")
@@ -51,3 +51,13 @@ def load_prompts():
             with open(os.path.join(prompts_dir, fname), "r", encoding="utf-8") as tf:
                 prompts[asset_id] = tf.read()
     return prompts
+
+def wake_on_lan_request():
+    try:
+        response = requests.get(WOL_ENDPOINT, timeout=300)
+        if response.status_code == 200:
+            logger.info(f"WOL request successful.")
+        else:
+            logger.warning(f"WOL request returned status code {response.status_code}.")
+    except requests.RequestException as e:
+        logger.error(f"WOL request failed: {e}")

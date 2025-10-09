@@ -3,8 +3,8 @@ import time
 import json
 import requests
 from queue import Empty, Queue
-from config import MAX_RETRIES, MIN_BATCH_SIZE, MAX_BATCH_SIZE, FLUSH_INTERVAL, HTTP_ENDPOINT, logger, LLM_LOCAL, GROUP_ID, MODEL, API_KEY, OUTPUT_TOPIC
-from utils import extract_scores_remote_LLM, extract_scores_local_LLM
+from config import MAX_RETRIES, MIN_BATCH_SIZE, MAX_BATCH_SIZE, FLUSH_INTERVAL, HTTP_ENDPOINT, logger, LLM_LOCAL, GROUP_ID, MODEL, API_KEY, WOL_ENDPOINT, session
+from utils import extract_scores_remote_LLM, extract_scores_local_LLM, wake_on_lan_request
 from kafka_io import sendEvent
 
 class AssetWorker(threading.Thread):
@@ -117,7 +117,6 @@ def send_to_api(messages, asset_id, producer, prompts):
         } 
         params = {"key": API_KEY}
     else:
-        
         payload = {
             "model": MODEL,
             "messages": [
@@ -158,10 +157,14 @@ def send_to_api(messages, asset_id, producer, prompts):
         }
 
     try:
-        resp = requests.post(HTTP_ENDPOINT,
+        if WOL_ENDPOINT is not None:
+            wake_on_lan_request()
+            
+        resp = session.post(HTTP_ENDPOINT,
                              json=payload,
                              params=params,
-                             timeout=120)
+                             timeout=(30, 600))
+
         resp.raise_for_status()
 
         results = []
@@ -209,7 +212,7 @@ def send_to_api(messages, asset_id, producer, prompts):
     # In send_to_api exception block:
     except requests.HTTPError as e:
         if e.response is not None and e.response.status_code == 429:
-            retry_after = int(e.response.headers.get("Retry-After", 60))
+            retry_after = int(e.response.headers.get("Retry-After", 600))
             logger.error(f"[A{asset_id}] 429 Too Many Requests. Sleeping {retry_after}s")
             time.sleep(retry_after)
         else:

@@ -1,5 +1,8 @@
 import os
 import logging
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,10 +23,17 @@ if not GROUP_ID:
 
 
 MODEL=os.getenv("MODEL", "")
-LLM_LOCAL = os.getenv("LLM_LOCAL", "false").lower() == "true"
+LLM_LOCAL = HTTP_ENDPOINT.startswith("http://")
 MIN_BATCH_SIZE = int(os.getenv("MIN_BATCH_SIZE", 4))
 MAX_BATCH_SIZE = int(os.getenv("MAX_BATCH_SIZE", 8))
 FLUSH_INTERVAL = int(os.getenv("FLUSH_INTERVAL", 20))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", 3))
 MAX_RPM = int(os.getenv("MAX_RPM", 30))
 MAX_RPD = int(os.getenv("MAX_RPD", 14400))
+WOL_ENDPOINT = os.getenv("WOL_ENDPOINT", None)
+
+session = requests.Session()
+retries = Retry(total=10, backoff_factor=2, status_forcelist=[429,500,502,503,504], connect=10, allowed_methods=["POST"], respect_retry_after_header=True)
+adapter = HTTPAdapter(max_retries=retries)
+session.mount("https://", adapter)
+session.mount("http://", adapter)

@@ -1,19 +1,19 @@
 services:
   firefox:
     deploy:
-      replicas: 4
+      replicas: 2
   
   sentiment-nlp:
     deploy:
-      replicas: 0
+      replicas: 1
 
   sentiment-deepseek:
     deploy:
-      replicas: 0
+      replicas: 1
   
   sentiment-gemini:
     deploy:
-      replicas: 0
+      replicas: 1
   
   consumer:
     deploy:

@@ -18,7 +18,6 @@ def initialize_kafka_producer():
             time.sleep(5)
 
 def initialize_kafka_consumer():
-    time.sleep(120)
     consumer = KafkaConsumer(
         INPUT_TOPIC,
         group_id=GROUP_ID,

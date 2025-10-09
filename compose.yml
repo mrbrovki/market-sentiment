@@ -92,8 +92,8 @@ services:
 
       # override default max sessions
       - SE_NODE_OVERRIDE_MAX_SESSIONS=true
-      - SE_NODE_MAX_SESSIONS=2
-      - SE_NODE_MAX_INSTANCES=4
+      - SE_NODE_MAX_SESSIONS=4
+      - SE_NODE_MAX_INSTANCES=8
       - SE_NODE_SESSION_TIMEOUT=300000000
     shm_size: 2g            # required for Firefox stability
     mem_limit: 2g           # hard memory cap
@@ -149,7 +149,6 @@ services:
       - INPUT_TOPIC=events
       - OUTPUT_TOPIC=sentiment-scores
       - GROUP_ID=gemini
-      - LLM_LOCAL=false
       - MIN_BATCH_SIZE=2
       - MAX_BATCH_SIZE=4
       - FLUSH_INTERVAL=180
@@ -180,11 +179,11 @@ services:
     environment:
       - HTTP_ENDPOINT=${DEEPSEEK_ENDPOINT}
       - MODEL=${DEEPSEEK_MODEL}
+      - WOL_ENDPOINT=${WOL_ENDPOINT}
       - KAFKA_BROKER=kafka:9092
       - INPUT_TOPIC=events
       - OUTPUT_TOPIC=sentiment-scores
       - GROUP_ID=deepseek
-      - LLM_LOCAL=true
       - MIN_BATCH_SIZE=2
       - MAX_BATCH_SIZE=2
       - FLUSH_INTERVAL=30
