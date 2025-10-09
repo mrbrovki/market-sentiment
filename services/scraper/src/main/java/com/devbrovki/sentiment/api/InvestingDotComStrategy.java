@@ -1,5 +1,6 @@
 package com.devbrovki.sentiment.api;
 
+import com.devbrovki.sentiment.model.Asset;
 import com.devbrovki.sentiment.model.Event;
 import jakarta.annotation.PreDestroy;
 import org.jsoup.Jsoup;
@@ -114,12 +115,21 @@ public class InvestingDotComStrategy implements Strategy {
         }
     }
     private void reconnectDriver(int session) {
-        cleanupDriver(session);
+        WebDriver driver = drivers[session];
+        executorService.submit(() -> {
+            cleanupDriver(driver);
+        });
         initDriver(session);
+
+        try {
+            Thread.sleep((long) (Math.random() * 10000));
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
-    public void cleanupDriver(int session) {
-        if (drivers[session] != null) {
-            drivers[session].quit();
+    public void cleanupDriver(WebDriver driver) {
+        if (driver != null) {
+            driver.quit();
         }
     }
 
@@ -202,11 +212,11 @@ public class InvestingDotComStrategy implements Strategy {
         }
     }
     private void realtime(int page) {
-        Elements articles = getArticlesWithRetry(page, 5);
+        Elements articles = getArticlesWithRetry(page, 10);
         createEvents(articles);
     }
     private void historical(int page) {
-        Elements articles = getArticlesWithRetry(page, 10);
+        Elements articles = getArticlesWithRetry(page, 20);
 
         Collections.reverse(articles);
         createEvents(articles);
@@ -218,7 +228,7 @@ public class InvestingDotComStrategy implements Strategy {
         while (attempt < maxRetries) {
             attempt++;
             String url = asset.getUrl().replace("{page}", String.valueOf(page));
-            Optional<String> pageSource = Optional.ofNullable(getPageSourceWithRetry(url, 0, 4));
+            Optional<String> pageSource = Optional.ofNullable(getPageSourceWithRetry(url, 0, 8));
 
             if(pageSource.isPresent()){
                 Document document = Jsoup.parse(pageSource.get());
@@ -349,7 +359,7 @@ public class InvestingDotComStrategy implements Strategy {
         }
     }
     private void handleArticle(Event event) {
-        readArticleWithRetry(event, 5);
+        readArticleWithRetry(event, 12);
 
         event.setId(UUID.randomUUID().toString());
 

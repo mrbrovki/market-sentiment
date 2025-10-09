@@ -1,4 +1,4 @@
-package com.devbrovki.sentiment.api;
+package com.devbrovki.sentiment.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

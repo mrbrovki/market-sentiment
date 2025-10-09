@@ -1,5 +1,6 @@
 package com.devbrovki.sentiment.api;
 
+import com.devbrovki.sentiment.model.Asset;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
