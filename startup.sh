@@ -22,6 +22,9 @@ sleep 60
 echo "🚀 Starting services..."
 docker compose up -d \
   scraper \
-  gemini
+  sentiment-deepseek \
+  sentiment-gemini \
+  sentiment-nlp
+
 
 echo "🎉 All services started: kafka → kafka-admin → others"
