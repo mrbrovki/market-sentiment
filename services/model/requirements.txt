@@ -1,0 +1,7 @@
+requests
+yfinance
+pandas
+numpy
+scikit-learn
+kafka-python
+optuna
