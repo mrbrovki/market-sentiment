@@ -33,7 +33,7 @@ MAX_RPD = int(os.getenv("MAX_RPD", 14400))
 WOL_ENDPOINT = os.getenv("WOL_ENDPOINT", None)
 
 session = requests.Session()
-retries = Retry(total=10, backoff_factor=2, status_forcelist=[429,500,502,503,504], connect=10, allowed_methods=["POST"], respect_retry_after_header=True)
+retries = Retry(total=12, backoff_factor=2, status_forcelist=[429,500,502,503,504], connect=8, allowed_methods=["POST"], respect_retry_after_header=True)
 adapter = HTTPAdapter(max_retries=retries)
 session.mount("https://", adapter)
 session.mount("http://", adapter)

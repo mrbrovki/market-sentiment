@@ -152,7 +152,7 @@ services:
       - MIN_BATCH_SIZE=2
       - MAX_BATCH_SIZE=4
       - FLUSH_INTERVAL=180
-      - MAX_RETRIES=3
+      - MAX_RETRIES=5
       - MAX_RPM=12
       - MAX_RPD=960
     
@@ -191,6 +191,16 @@ services:
       - MAX_RPM=6969696960
       - MAX_RPD=6969696960
     
+  model:
+    build: 
+      context: './services/model'
+      dockerfile: Dockerfile
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - INPUT_TOPIC=sentiment-scores
+      - GROUP_ID=model
 
   #chart:
   #  build: 

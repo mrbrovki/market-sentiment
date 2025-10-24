@@ -1,2 +1,6 @@
 .env
+venv
+projects/
+.vscode/
+__pycache__/
 .DS_Store
