@@ -17,6 +17,7 @@ class ModelTrainer:
 	def __init__(self, config):
 		self.config = config
 		self.model = None
+		self.best_optuna_params = None
 
 	def _create_model(self):
 		return RandomForestClassifier(
@@ -111,6 +112,7 @@ class ModelTrainer:
 			return {"success": False, "error": "No successful optuna trials"}
 
 		best_params = study.best_params
+		self.best_optuna_params = best_params
 		logger.info(f"Optuna best value: {study.best_value:.4f} params: {best_params}")
 
 		# Prepare final dataset with best params and train final model on final train/test split
@@ -152,6 +154,17 @@ class ModelTrainer:
 			"timestamp": datetime.now().isoformat()
 		}
 
+	def get_hyperparameters(self) -> dict:
+		"""Get both model parameters and optimized Optuna parameters."""
+		if self.model is None:
+			return None
+		
+		params = {
+			"model_params": self.model.get_params(),
+			"optuna_params": self.best_optuna_params
+		}
+		return params
+	
 	def save(self, output_dir):
 		if not self.model:
 			logger.warning("No model to save.")

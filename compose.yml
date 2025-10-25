@@ -200,6 +200,7 @@ services:
     environment:
       - KAFKA_BROKER=kafka:9092
       - INPUT_TOPIC=sentiment-scores
+      - OUTPUT_TOPIC=model-params
       - GROUP_ID=model
 
   #chart:

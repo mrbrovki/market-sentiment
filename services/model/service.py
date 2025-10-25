@@ -11,10 +11,15 @@ from typing import Dict, List
 logger = get_logger(__name__)
 
 def run_service():
+    # Load configuration and initialize components
     config = Config()
     loader = DataLoader()
-    consumer = KafkaIO.initialize_kafka_consumer(config)
     trainer = ModelTrainer(config)
+
+    # Initialize Kafka consumer and producer
+    consumer = KafkaIO.initialize_kafka_consumer(config)
+    producer = KafkaIO.initialize_kafka_producer(config)
+
 
     asset_names:List = list()
     messages:Dict = dict()
@@ -45,7 +50,8 @@ def run_service():
             idle = time.time() - last_msg_time
             since_train = time.time() - last_train_time
 
-            if not trained_once and idle >= config.idle_timeout:
+            if ((not trained_once and idle >= config.IDLE_TEMOUT) or 
+                (trained_once and since_train >= config.RETRAIN_INTERVAL and idle >= config.IDLE_TEMOUT)):
                 logger.info("Idle timeout reached. Starting training process.")
 
                 # Set events dataframes for each asset
@@ -65,20 +71,16 @@ def run_service():
                 results = trainer.train(events, asset_prices, asset_names)
                 
                 if results.get("success"):
-                    trainer.save(config.output_dir)
-                    json.dump(results, open(Path(config.output_dir) / "latest_results.json", "w"), indent=2)
+                    trainer.save(config.OUTPUT_DIR)
+                    json.dump(results, open(Path(config.OUTPUT_DIR) / "latest_results.json", "w"), indent=2)
                     trained_once = True
                     last_train_time = time.time()
+                    producer.send(
+                        config.OUTPUT_TOPIC,
+                        value=results
+                    )
                 else:
                     logger.error(f"Training failed: {results.get('error')}")
-                    
-
-            if trained_once and since_train >= config.retrain_interval:
-                logger.info("Retraining interval reached. Resetting offset.")
-                KafkaIO.reset_consumer_offset(consumer, config)
-                messages.clear()
-                trained_once = False
-                last_msg_time = time.time()
 
             time.sleep(0.1)
 
