@@ -1,7 +1,7 @@
 services:
   firefox:
     deploy:
-      replicas: 2
+      replicas: 10
   
   sentiment-nlp:
     deploy:
@@ -14,7 +14,3 @@ services:
   sentiment-gemini:
     deploy:
       replicas: 1
-  
-  consumer:
-    deploy:
-      replicas: 0

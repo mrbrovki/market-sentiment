@@ -92,11 +92,11 @@ services:
 
       # override default max sessions
       - SE_NODE_OVERRIDE_MAX_SESSIONS=true
-      - SE_NODE_MAX_SESSIONS=4
-      - SE_NODE_MAX_INSTANCES=8
+      - SE_NODE_MAX_SESSIONS=1
+      - SE_NODE_MAX_INSTANCES=10
       - SE_NODE_SESSION_TIMEOUT=300000000
-    shm_size: 2g            # required for Firefox stability
-    mem_limit: 2g           # hard memory cap
+    shm_size: 1g            # required for Firefox stability
+    mem_limit: 1g           # hard memory cap
     mem_reservation: 1g  # soft memory cap
 
   scraper:
@@ -113,15 +113,6 @@ services:
       - scraper:/app/db
     depends_on:
         - kafka
-
-  consumer:
-    build: 
-      context: './services/consumer'
-      dockerfile: Dockerfile
-    depends_on:
-      - kafka
-    environment:
-      - BOOTSTRAP_SERVERS=kafka:9092
 
   #backend:
   #  build: 
@@ -202,6 +193,7 @@ services:
       - INPUT_TOPIC=sentiment-scores
       - OUTPUT_TOPIC=model-params
       - GROUP_ID=model
+      - PREDICTION_OUTPUT_TOPIC=predictions
 
   #chart:
   #  build: 
