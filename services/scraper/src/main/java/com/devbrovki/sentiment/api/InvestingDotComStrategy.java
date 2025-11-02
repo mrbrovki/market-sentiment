@@ -53,7 +53,7 @@ public class InvestingDotComStrategy implements Strategy {
     // ARTICLES
     private final Map<String, Long> readArticlesMap = new ConcurrentHashMap<>();
     private final PriorityBlockingQueue<Event> linksQueue = new PriorityBlockingQueue<>(1024,
-            Comparator.comparingLong(Event::getTimeStamp));
+            Comparator.comparingLong(Event::getTimestamp));
     private long lastValidTS = -1;
     private final long MAX_AGE = 14 * 86_400_000;
 
@@ -277,7 +277,7 @@ public class InvestingDotComStrategy implements Strategy {
 
             Event event = new Event();
             event.setUrl(link);
-            event.setTimeStamp(timestamp);
+            event.setTimestamp(timestamp);
             event.setTitle(title);
             event.setSource(asset.getSource());
             event.setAsset(asset.getName());
@@ -363,10 +363,10 @@ public class InvestingDotComStrategy implements Strategy {
 
         event.setId(UUID.randomUUID().toString());
 
-        if (event.getTimeStamp() > 0 && !event.getTitle().isEmpty()) {
+        if (event.getTimestamp() > 0 && !event.getTitle().isEmpty()) {
             sendUpdateToKafka(event);
             persistEvent(event);
-            readArticlesMap.replace(event.getUrl(), event.getTimeStamp());
+            readArticlesMap.replace(event.getUrl(), event.getTimestamp());
         } else {
             System.err.println(this.asset.getName() + ": event dropped");
         }
@@ -476,7 +476,7 @@ public class InvestingDotComStrategy implements Strategy {
     }
     private void persistEvent(Event event){
         try {
-            bufferedWriter.write(event.getUrl() + "," + event.getTimeStamp() + "\n");
+            bufferedWriter.write(event.getUrl() + "," + event.getTimestamp() + "\n");
         } catch (IOException e) {
             System.err.println("ERROR: " + e.getMessage());
         }
