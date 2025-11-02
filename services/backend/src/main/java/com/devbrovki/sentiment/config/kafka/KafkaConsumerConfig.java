@@ -1,7 +1,7 @@
 package com.devbrovki.sentiment.config.kafka;
 
-import com.devbrovki.sentiment.model.Event;
-import com.devbrovki.sentiment.model.SentimentResult;
+import com.devbrovki.sentiment.dto.DecayedScore;
+import com.devbrovki.sentiment.dto.SentimentScore;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,43 +25,51 @@ public class KafkaConsumerConfig {
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
-    public Map<String, Object> config() {
+    public Map<String, Object> baseConfig() {
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "backend");
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.put(JsonDeserializer.TRUSTED_PACKAGES, "*");
-        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, Event.class.getName());
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
         return props;
     }
-/*
-    @Bean
-    public ConsumerFactory<String, Map<Long, double[]>> consumerFactory() {
-        MapDeserializer deserializer = new MapDeserializer();
-        return new DefaultKafkaConsumerFactory<>(config(), new StringDeserializer(), deserializer);
+
+    // Generic method to create a ConsumerFactory for any type
+    public <T> ConsumerFactory<String, T> createConsumerFactory(Class<T> targetType) {
+        return new DefaultKafkaConsumerFactory<>(
+                baseConfig(),
+                new StringDeserializer(),
+                new JsonDeserializer<>(targetType)
+        );
     }
 
-    @Bean
-    public KafkaListenerContainerFactory<ConcurrentMessageListenerContainer<String, Map<Long, double[]>>> kafkaListenerContainerFactory(
-            ConsumerFactory<String, Map<Long, double[]>> consumerFactory) {
-        ConcurrentKafkaListenerContainerFactory<String, Map<Long, double[]>> listenerContainerFactory =
+    // Generic method to create a ListenerContainerFactory for any type
+    public <T> KafkaListenerContainerFactory<ConcurrentMessageListenerContainer<String, T>>
+    createListenerContainerFactory(Class<T> targetType) {
+
+        ConcurrentKafkaListenerContainerFactory<String, T> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
-        listenerContainerFactory.setConsumerFactory(consumerFactory);
-        return listenerContainerFactory;
+        factory.setConsumerFactory(createConsumerFactory(targetType));
+        return factory;
     }
 
- */
+    // SENTIMENT SCORE
     @Bean
-    public ConsumerFactory<String, Event> eventConsumerFactory() {
-        return new DefaultKafkaConsumerFactory<>(config(), new StringDeserializer(), new JsonDeserializer<>(Event.class));
+    public ConsumerFactory<String, SentimentScore> sentimentConsumerFactory() {return createConsumerFactory(SentimentScore.class);}
+    @Bean
+    public KafkaListenerContainerFactory<ConcurrentMessageListenerContainer<String, SentimentScore>>
+    sentimentListenerContainerFactory() {
+        return createListenerContainerFactory(SentimentScore.class);
     }
 
+    // SENTIMENT SCORE
     @Bean
-    public KafkaListenerContainerFactory<ConcurrentMessageListenerContainer<String, Event>> eventListenerContainerFactory(
-            ConsumerFactory<String, Event> consumerFactory) {
-        ConcurrentKafkaListenerContainerFactory<String, Event> listenerContainerFactory =
-                new ConcurrentKafkaListenerContainerFactory<>();
-        listenerContainerFactory.setConsumerFactory(consumerFactory);
-        return listenerContainerFactory;
+    public ConsumerFactory<String, DecayedScore> decayedScoreConsumerFactory() {return createConsumerFactory(DecayedScore.class);}
+    @Bean
+    public KafkaListenerContainerFactory<ConcurrentMessageListenerContainer<String, DecayedScore>>
+    decayedScoreListenerContainerFactory() {
+        return createListenerContainerFactory(DecayedScore.class);
     }
 }

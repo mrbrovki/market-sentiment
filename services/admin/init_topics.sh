@@ -21,12 +21,14 @@ create_topic() {
 }
 
 echo "🚀 Creating topics..."
-create_topic sentiment-scores   8 3221225472 536870912
-create_topic events             8 6442450944 536870912
-create_topic chart              8 1073741824 536870912
-create_topic assets             1 1073741824 536870912
-create_topic map                8 1073741824 536870912
-create_topic model-params       1 1073741824 536870912
+create_topic sentiment-scores           8 3221225472 536870912
+create_topic events                     8 6442450944 536870912
+create_topic chart                      8 1073741824 536870912
+create_topic assets                     1 1073741824 536870912
+create_topic map                        8 1073741824 536870912
+create_topic model-params               1 1073741824 536870912
+create_topic model-predictions          1 1073741824 536870912
+create_topic model-decayed-scores       1 1073741824 536870912
 echo "🎉 Topics created (or already existed)!"
 
 # Send a message to the "assets" topic
