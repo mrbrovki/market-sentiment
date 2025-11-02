@@ -227,7 +227,6 @@ def process_messages(asset_queues, consumer, producer, prompts, rateLimitState):
     for message in consumer:
         try:
             payload = json.loads(message.value)
-            payload.pop("url", None)
 
             # trim content
             if len(payload.get("content","")) > 2048:
