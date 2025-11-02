@@ -18,5 +18,5 @@ public class Event {
     private String title;
     private String content;
     private String id;
-    private long timeStamp;
+    private long timestamp;
 }

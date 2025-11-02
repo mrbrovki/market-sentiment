@@ -14,7 +14,7 @@ public class SentimentResult {
     private String evaluator;
     private String source;
     private String id;
-    private long timeStamp;
+    private long timestamp;
     private double score;
 }
 
