@@ -7,18 +7,17 @@ def process_messages(consumer, producer):
         try:
             # Parse the incoming message
             event = json.loads(message.value)
-            event.pop("url", None)
 
             logger.info(f"Received a message!")
 
             # Validate and process necessary keys
-            title = event.get("title")
-            content = event.get("content")
+            title = event.get("title")[:2048]
+            content = event.get("content")[:2048]
 
             score = None
 
             # Run title classification
-            result = pipe(title, truncation=True, max_length=512)
+            result = pipe(title, truncation=True, max_length=2048)
             titleScore = result[0]['score'] * weights[result[0]['label']]
 
             if(content != ""):
@@ -34,7 +33,8 @@ def process_messages(consumer, producer):
 
             event["score"] = score
             event["evaluator"] = GROUP_ID
-
+            event = {k: v for k, v in event.items() if k != "content"}
+            
             sendEvent(producer, event, event.get("asset"))
 
             logger.info(f'Message sent!')
