@@ -154,6 +154,31 @@ class ModelTrainer:
 			"timestamp": datetime.now().isoformat()
 		}
 
+	def predict(self, events_dict, prices_dict, asset_names):
+		"""Make predictions using the trained model."""
+		if self.model is None:
+			logger.warning("No model trained yet. Cannot make predictions.")
+			return None
+		
+		X, _ = FeatureEngineering.prepare_features(
+			events_dict, prices_dict, asset_names,
+			self.best_optuna_params["lambdaDenom"],
+			self.best_optuna_params["l_threshold"],
+			self.best_optuna_params["s_threshold"]
+		)
+		if X is None or X.size == 0 or not np.isfinite(X).all():
+			logger.warning("Prepared features are invalid. Cannot make predictions.")
+			return None
+		
+		predictions = self.model.predict(X)
+
+
+		return {
+			"predictions": predictions.tolist(),
+			""
+			"timestamp": datetime.now().isoformat()
+		}
+	
 	def get_hyperparameters(self) -> dict:
 		"""Get both model parameters and optimized Optuna parameters."""
 		if self.model is None:

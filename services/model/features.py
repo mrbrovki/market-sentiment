@@ -15,13 +15,26 @@ class FeatureEngineering:
         events_df["event_dt"] = pd.to_datetime(events_df["dt"])
         events_df["dt"] = pd.to_datetime(events_df["dt"]).dt.floor(freq=freq)
         events_df["is_blank"] = False
-
+        events_df = events_df.drop_duplicates("dt", keep="first")
+        
+        # Get complete date range
         all_dts = pd.date_range(events_df["dt"].min(), events_df["dt"].max(), freq=freq)
-        blank_df = pd.DataFrame({"dt": all_dts, "sentiment": 0.0, "is_blank": True, "asset": events_df["asset"].iat[0], "event_dt": all_dts})
-
-        combined = pd.concat([events_df, blank_df]).sort_values(["dt", "is_blank"]).drop_duplicates("dt", keep="first")
-        combined = combined.sort_values("dt")
-
+        
+        # Find ONLY missing dates
+        existing_dts = set(events_df["dt"])
+        missing_dts = all_dts[~all_dts.isin(existing_dts)]
+        
+        # Create blanks ONLY for missing dates
+        blank_df = pd.DataFrame({
+            "dt": missing_dts,
+            "sentiment": 0.0,
+            "is_blank": True,
+            "asset": events_df["asset"].iat[0],
+            "event_dt": missing_dts
+        })
+        
+        combined = pd.concat([events_df, blank_df]).sort_values("dt")
+        
         return combined
 
     @staticmethod
@@ -131,3 +144,26 @@ class FeatureEngineering:
         logger.debug(f"Class distribution: {np.bincount(y)}")
 
         return X, y
+    
+        
+    @staticmethod
+    def weighted_model_score(events_df: pd.DataFrame) -> pd.DataFrame:
+        """Calculate weighted sentiment scores while preserving asset column."""
+        if events_df.empty:
+            return pd.DataFrame(columns=['dt', 'sentiment', 'asset'])
+
+        events_df = events_df.copy()
+        evaluator_weights = {"nlp": 1, "gemini": 2, "deepseek": 3}
+        
+        events_df['evaluator_weight'] = events_df['evaluator'].map(evaluator_weights)
+        events_df['weighted_score'] = events_df['sentiment'] * events_df['evaluator_weight']
+        
+        grouped = events_df.groupby('id', as_index=False).agg({
+            'weighted_score': 'sum',
+            'evaluator_weight': 'sum',
+            'asset': 'first',
+            'dt': 'first'
+        })
+        
+        grouped['sentiment'] = grouped['weighted_score'] / grouped['evaluator_weight']
+        return grouped[['dt', 'sentiment', 'asset']]

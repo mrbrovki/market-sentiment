@@ -22,7 +22,7 @@ class DataLoader:
 
         df = df.set_index("dt").sort_index().reset_index()
 
-        return df[["asset", "sentiment", "dt"]]
+        return df[["asset", "sentiment", "dt", "evaluator", "id"]]
 
     @staticmethod
     def load_prices(ticker, start_date, end_date, interval, resample_freq):

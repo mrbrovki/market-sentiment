@@ -54,9 +54,10 @@ def run_service():
                 (trained_once and since_train >= config.RETRAIN_INTERVAL and idle >= config.IDLE_TEMOUT)):
                 logger.info("Idle timeout reached. Starting training process.")
 
-                # Set events dataframes for each asset
+                # Set events dataframes for each asset, injecting blank events where necessary and sort
                 for asset_name, arr in messages.items():
                     events_df = loader.events_from_kafka_messages(arr)
+                    events_df = FeatureEngineering.weighted_model_score(events_df)
                     events[asset_name] = FeatureEngineering.inject_blank_events(events_df, freq='D')
 
                 
@@ -79,9 +80,39 @@ def run_service():
                         config.OUTPUT_TOPIC,
                         value=results
                     )
+
+                    #send decayed scores to kafka
+                    for asset in asset_names:
+                        events_df = events[asset].copy()
+                        # Apply decay
+                        decayed_df = FeatureEngineering.apply_decay(events_df, trainer.best_optuna_params["lambdaDenom"])
+                        decayed_df.dropna(inplace=True)
+
+                        #iterate through rows and send to kafka
+                        for _, row in decayed_df.iterrows():
+                            producer.send(
+                                config.DECAYED_SCORES_TOPIC,
+                                key=asset,
+                                value={
+                                    "asset": asset,
+                                    "timestamp": int(row["dt"].timestamp() * 1000),
+                                    "lastTrainTime": int(last_train_time * 1000),
+                                    "decayedScore": row["decayed_score"]
+                                }
+                            )
+
                 else:
                     logger.error(f"Training failed: {results.get('error')}")
 
+            else:
+                # if there is a model already trained, make predictions on new data
+                if trained_once:
+                    for _, records in msg_batch.items():
+                        for record in records:
+                            asset_name = record.value.get("asset")
+                            
+
+                    predictions = trainer.predict(events, asset_prices, asset_names)
             time.sleep(0.1)
 
     except KeyboardInterrupt:
