@@ -92,10 +92,10 @@ services:
 
       # override default max sessions
       - SE_NODE_OVERRIDE_MAX_SESSIONS=true
-      - SE_NODE_MAX_SESSIONS=1
-      - SE_NODE_MAX_INSTANCES=10
+      - SE_NODE_MAX_SESSIONS=2
+      - SE_NODE_MAX_INSTANCES=2
       - SE_NODE_SESSION_TIMEOUT=300000000
-    shm_size: 1g            # required for Firefox stability
+    shm_size: 2g            # required for Firefox stability
     mem_limit: 1g           # hard memory cap
     mem_reservation: 1g  # soft memory cap
 
@@ -114,16 +114,16 @@ services:
     depends_on:
         - kafka
 
-  #backend:
-  #  build: 
-  #    context: './services/backend'
-  #    dockerfile: Dockerfile
-  #  depends_on:
-  #    - kafka
-  #  ports:
-  #    - '7979:7979' 
-  #  environment:
-  #    - BOOTSTRAP_SERVERS=kafka:9092
+  backend:
+    build: 
+      context: './services/backend'
+      dockerfile: Dockerfile
+    depends_on:
+      - kafka
+    ports:
+      - '7979:7979' 
+    environment:
+      - BOOTSTRAP_SERVERS=kafka:9092
 
   sentiment-gemini:
     logging: *default-logging
@@ -192,17 +192,10 @@ services:
       - KAFKA_BROKER=kafka:9092
       - INPUT_TOPIC=sentiment-scores
       - OUTPUT_TOPIC=model-params
+      - DECAYED_SCORES_TOPIC=model-decayed-scores
       - GROUP_ID=model
-      - PREDICTION_OUTPUT_TOPIC=predictions
+      - PREDICTION_OUTPUT_TOPIC=model-predictions
 
-  #chart:
-  #  build: 
-  #    context: './services/chart'
-  #    dockerfile: Dockerfile
-  #  volumes:
-  #    - csv_data:/data
-  #  depends_on:
-  #    - kafka
 
 volumes:
   csv_data:
