@@ -29,4 +29,4 @@ class TradingScorer:
 
     @classmethod
     def get_scorer(cls):
-        return make_scorer(cls.f1_score)
+        return cls.score

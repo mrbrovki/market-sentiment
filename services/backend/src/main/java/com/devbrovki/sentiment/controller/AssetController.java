@@ -1,9 +1,7 @@
 package com.devbrovki.sentiment.controller;
 
-import com.devbrovki.sentiment.dto.SentimentScore;
-import com.devbrovki.sentiment.services.DecayedStore;
-import com.devbrovki.sentiment.services.SentimentStore;
-import jakarta.websocket.server.PathParam;
+import com.devbrovki.sentiment.dto.OptimizationResultDTO;
+import com.devbrovki.sentiment.services.ModelStore;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,12 +11,10 @@ import java.util.List;
 @RequestMapping("/assets")
 public class AssetController {
 
-    private final SentimentStore sentimentStore;
-    private final DecayedStore decayedStore;
+    private final ModelStore modelStore;
 
-    public AssetController(SentimentStore sentimentStore, DecayedStore decayedStore) {
-        this.sentimentStore = sentimentStore;
-        this.decayedStore = decayedStore;
+    public AssetController(ModelStore modelStore) {
+        this.modelStore = modelStore;
     }
 
     @GetMapping
@@ -35,14 +31,14 @@ public class AssetController {
     @GetMapping("/{asset}/scores")
     public ResponseEntity<List<?>> getAssetScores(@PathVariable String asset, @RequestParam boolean decayed) {
         if(decayed){
-            return ResponseEntity.ok(decayedStore.getDecayedScores(asset));
+            return ResponseEntity.ok(modelStore.getDecayedScores(asset));
         }else{
-            return ResponseEntity.ok(sentimentStore.getSentiments(asset));
+            return ResponseEntity.ok(modelStore.getSentiments(asset));
         }
     }
 
     @GetMapping("/{asset}/params")
-    public ResponseEntity<String> getAssetParams(@PathVariable String asset) {
-        return ResponseEntity.ok(asset);
+    public ResponseEntity<OptimizationResultDTO> getAssetParams(@PathVariable String asset) {
+        return ResponseEntity.ok(modelStore.getBestOptimizationResultDTO());
     }
 }

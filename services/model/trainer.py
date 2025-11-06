@@ -30,7 +30,7 @@ class ModelTrainer:
 		Optuna-based time-series optimization. Tunes lambdaDenom, l_threshold, s_threshold,
 		uses TimeSeriesSplit CV and leaves the last split for final test evaluation.
 		"""
-		scorer = TradingScorer.f1_score
+		scorer = TradingScorer.get_scorer()
 
 		# Optuna search space bounds (match notebook)
 		lambda_low, lambda_high = 60.0, 2592000.0
@@ -148,10 +148,14 @@ class ModelTrainer:
 
 		return {
 			"success": True,
-			"test_score": float(test_score),
-			"best_params": best_params,
-			"optuna_best_value": float(study.best_value),
-			"timestamp": datetime.now().isoformat()
+			"testScore": float(test_score),
+			"bestParams": {
+				"lambdaDenom": float(best_params["lambdaDenom"]),
+				"longThreshold": float(best_params["l_threshold"]),
+				"shortThreshold": float(best_params["s_threshold"]),
+			},
+			"optunaBestValue": float(study.best_value),
+			"timestamp": int(datetime.now().timestamp() * 1000)
 		}
 
 	def predict(self, events_dict, prices_dict, asset_names):

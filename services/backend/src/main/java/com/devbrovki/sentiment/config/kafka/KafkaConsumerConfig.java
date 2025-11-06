@@ -1,6 +1,7 @@
 package com.devbrovki.sentiment.config.kafka;
 
 import com.devbrovki.sentiment.dto.DecayedScore;
+import com.devbrovki.sentiment.dto.OptimizationResultDTO;
 import com.devbrovki.sentiment.dto.SentimentScore;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -71,5 +72,14 @@ public class KafkaConsumerConfig {
     public KafkaListenerContainerFactory<ConcurrentMessageListenerContainer<String, DecayedScore>>
     decayedScoreListenerContainerFactory() {
         return createListenerContainerFactory(DecayedScore.class);
+    }
+
+    //OptimizationResultDTO
+    @Bean
+    public ConsumerFactory<String, OptimizationResultDTO> modelParamsConsumerFactory() {return createConsumerFactory(OptimizationResultDTO.class);}
+    @Bean
+    public KafkaListenerContainerFactory<ConcurrentMessageListenerContainer<String, OptimizationResultDTO>>
+    modelParamsListenerContainerFactory() {
+        return createListenerContainerFactory(OptimizationResultDTO.class);
     }
 }
