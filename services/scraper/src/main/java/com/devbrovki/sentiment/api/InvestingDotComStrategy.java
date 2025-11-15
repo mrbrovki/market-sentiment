@@ -2,17 +2,15 @@ package com.devbrovki.sentiment.api;
 
 import com.devbrovki.sentiment.model.Asset;
 import com.devbrovki.sentiment.model.Event;
+import com.devbrovki.sentiment.utils.Logger;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import org.openqa.selenium.JavascriptExecutor;
-import org.openqa.selenium.PageLoadStrategy;
 import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.firefox.FirefoxOptions;
-import org.openqa.selenium.firefox.FirefoxProfile;
-import org.openqa.selenium.remote.RemoteWebDriver;
+import org.openqa.selenium.WebDriverException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Scope;
@@ -20,22 +18,22 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.PriorityBlockingQueue;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 @Component
 @Scope("prototype")
 public class InvestingDotComStrategy implements Strategy {
+    private final ResilienceManager resilienceManager;
+    private final Logger logger;
+    private final Selenium selenium;
+    private final ExecutorService executorService;
+    private final KafkaTemplate<String, Event> kafkaTemplate;
+
     @Value("${queue.init.time}")
     private long queueInitTime;
 
@@ -46,99 +44,52 @@ public class InvestingDotComStrategy implements Strategy {
     private volatile boolean isFinished = true;
     private volatile boolean shutdown = false;
 
-    //  BEANS
-    private final ExecutorService executorService;
-    private final KafkaTemplate<String, Event> kafkaTemplate;
-
     // ARTICLES
     private final Map<String, Long> readArticlesMap = new ConcurrentHashMap<>();
-    private final PriorityBlockingQueue<Event> linksQueue = new PriorityBlockingQueue<>(1024,
-            Comparator.comparingLong(Event::getTimestamp));
+    private final PriorityBlockingQueue<Event> linksQueue =
+            new PriorityBlockingQueue<>(1024, Comparator.comparingLong(Event::getTimestamp));
     private long lastValidTS = -1;
-    private final long MAX_AGE = 14 * 86_400_000;
+    private final long MAX_AGE = 14 * 86_400_000L;
 
+    private final WebDriver[] drivers = new WebDriver[2];
 
     //  LOGGING
     private BufferedWriter bufferedWriter = null;
 
-
-    //  BROWSING
-    @Value("${remote.web.driver}")
-    private String remoteWebDriverUrl;
-    private final List<FirefoxOptions> optionsList = new ArrayList<>(2);
-
-    private final WebDriver[] drivers = new WebDriver[2];
-    private void initDriver(int session) {
-        try {
-            drivers[session] = RemoteWebDriver.builder()
-                    .oneOf(optionsList.get(session))
-                    .address(new URI(remoteWebDriverUrl))
-                    .build();
-        } catch (URISyntaxException e) {
-            throw new RuntimeException(e);
-        }
-        drivers[session].manage().timeouts().pageLoadTimeout(Duration.ofSeconds(240));
+    private void newDriverSession(int driverIndex) {
+        logger.logInfo("Creating new driver session for index: " + driverIndex);
+        WebDriver oldDriver = drivers[driverIndex];
+        drivers[driverIndex] = selenium.replaceDriver(oldDriver);
     }
-    private void initDrivers(List<String> userAgents) {
-        for (String userAgent: userAgents) {
-            FirefoxOptions options = new FirefoxOptions();
-            FirefoxProfile firefoxProfile = new FirefoxProfile();
-            firefoxProfile.setPreference("general.useragent.override", userAgent);
-            //options.setProfile(firefoxProfile);
-
-
-
-            // Disable images
-            options.addPreference("permissions.default.image", 2);
-            options.addPreference("permissions.default.stylesheet", 2);  // no CSS
-            options.addPreference("gfx.downloadable_fonts.enabled", false);// no custom fonts
-
-            options.addArguments("-private");
-            options.addArguments("-headless");
-            options.setPageLoadStrategy(PageLoadStrategy.EAGER);
-
-            optionsList.add(options);
-        }
-
-        for(int i = 0; i < drivers.length; i++) {
-            initDriver(i);
-        }
-    }
-    private void clearBrowserState(WebDriver driver) {
-        try {
-            driver.manage().deleteAllCookies();
-            ((JavascriptExecutor) driver).executeScript("window.localStorage.clear(); window.sessionStorage.clear();");
-
-            System.out.println(this.asset.getName() + " " + this.isHistorical + ": Cleared cookies and storage.");
-        } catch (Exception e) {
-            System.err.println(this.asset.getName() + ": Could not clear browser state: " + e.getMessage());
-        }
-    }
-    private void reconnectDriver(int session) {
-        WebDriver driver = drivers[session];
-        executorService.submit(() -> {
-            cleanupDriver(driver);
+    private String getPageSourceWithRetry(String url, int driverIndex) {
+        return resilienceManager.retry(()->{
+            newDriverSession(driverIndex);
+            WebDriver driver = drivers[driverIndex];
+            if (driver == null) {
+                throw new RuntimeException("Driver is null after replacement");
+            }
+            driver.get(url);
+            return driver.getPageSource();
+        }, logger, exception -> {
+            // Don't retry if page not found
+            if (exception instanceof org.openqa.selenium.NoSuchElementException ||
+                    exception.getMessage().contains("404")) {
+                return false;
+            }
+            return true;
         });
-        initDriver(session);
-
-        try {
-            Thread.sleep((long) (Math.random() * 10000));
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
-    }
-    public void cleanupDriver(WebDriver driver) {
-        if (driver != null) {
-            driver.quit();
-        }
     }
 
     @PreDestroy
     public void destroy() {
         shutdown = true;
         for (WebDriver driver : drivers) {
-            if(driver != null) {
-                driver.quit();
+            try {
+                if(driver != null) {
+                    driver.quit();
+                }
+            }catch (WebDriverException e) {
+                logger.logError("Could not quit driver when exiting", e);
             }
         }
         try {
@@ -148,41 +99,37 @@ public class InvestingDotComStrategy implements Strategy {
             throw new RuntimeException(e);
         }
     }
-    private String getPageSourceWithRetry(String url, int session, int maxRetries) {
-        String pageSource = null;
-        int attempt = 0;
-
-        while (pageSource == null && attempt < maxRetries) {
-            try {
-                attempt++;
-                drivers[session].get(url);
-                pageSource = drivers[session].getPageSource();
-                clearBrowserState(drivers[session]);
-            } catch (Exception e) {
-                System.err.println(this.asset.getName() + ": Driver error. Reconnecting...");
-                reconnectDriver(session);
-            }
-        }
-
-        return pageSource;
-    }
 
 
     @Autowired
-    public InvestingDotComStrategy(KafkaTemplate<String, Event> kafkaTemplate, ExecutorService executorService) {
+    public InvestingDotComStrategy(KafkaTemplate<String, Event> kafkaTemplate, ExecutorService executorService,
+                                   ResilienceManager resilienceManager, Logger logger, Selenium selenium) {
         this.kafkaTemplate = kafkaTemplate;
         this.executorService = executorService;
+        this.resilienceManager = resilienceManager;
+        this.logger = logger;
+        this.selenium = selenium;
     }
 
-    public void init(Asset asset, List<String> userAgents){
+    public void initAsset(Asset asset){
         this.asset = asset;
 
-        initDrivers(userAgents);
-        processQueue();
+        logger.setAsset(asset);
+        logger.setScraper("InvestingDotCom");
 
         String csvPath = "db/" + this.asset.getName() + ".csv";
-        loadReadArticlesFromCsvFile(csvPath);
         File csvFile = new File(csvPath);
+        if(csvFile.exists()){
+            loadReadArticlesFromCsvFile(csvPath);
+        }else{
+            csvFile.getParentFile().mkdirs();
+            try {
+                csvFile.createNewFile();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
         try {
             FileWriter csvWriter = new FileWriter(csvFile, true);
             bufferedWriter = new BufferedWriter(csvWriter, 16 * 1024);
@@ -191,6 +138,10 @@ public class InvestingDotComStrategy implements Strategy {
         }
     }
 
+    @PostConstruct
+    public void init(){
+        processQueue();
+    }
 
     //  retrieve new articles
     @Override
@@ -212,62 +163,80 @@ public class InvestingDotComStrategy implements Strategy {
         }
     }
     private void realtime(int page) {
-        Elements articles = getArticlesWithRetry(page, 10);
-        createEvents(articles);
+        Elements articles = getArticlesWithRetry(page, 12);
+        logger.logInfo("doing realtime Page " + page + ": " + articles.size());
+        handleArticles(articles);
     }
     private void historical(int page) {
-        Elements articles = getArticlesWithRetry(page, 20);
+        Elements articles = getArticlesWithRetry(page, 12);
+        logger.logInfo("doing historical Page " + page + ": " + articles.size());
 
         Collections.reverse(articles);
-        createEvents(articles);
+        handleArticles(articles);
     }
     private Elements getArticlesWithRetry(int page, int maxRetries) {
         int attempt = 0;
+        int driverIndex = 0;
         Elements articles = new Elements();
 
         while (attempt < maxRetries) {
             attempt++;
             String url = asset.getUrl().replace("{page}", String.valueOf(page));
-            Optional<String> pageSource = Optional.ofNullable(getPageSourceWithRetry(url, 0, 8));
+            Optional<String> pageSource = Optional.ofNullable(getPageSourceWithRetry(url, driverIndex));
 
             if(pageSource.isPresent()){
                 Document document = Jsoup.parse(pageSource.get());
                 articles = document.getElementsByTag("article");
+                if(!articles.isEmpty()) {
+                    logger.logInfo("Articles read from page: " + page + ", count: " + articles.size());
+                    break;
+                }
+                if(!document.getElementsByTag("error404").isEmpty()){
+                    logger.logWarn("Page " + page + " failed to load articles. Error 404. Skipping reattempt...");
+                    break;
+                }
             }
-
-            if (!articles.isEmpty()) {
-                break;
+            logger.logWarn("Page " + page + " failed to load articles. Attempt: " + attempt);
+            try {
+                Thread.sleep((int) Math.pow(2, attempt) * 1000L);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             }
-
-            System.err.println(this.asset.getName() + ": Attempt " + (attempt) + " failed. Reconnecting...");
-            reconnectDriver(0);
         }
 
         if (articles.isEmpty()) {
-            System.err.println(this.asset.getName() + ": All attempts to get articles failed");
+            logger.logWarn("Page " + page + " failed to return articles");
         }
         return articles;
     }
-    private void createEvents(Elements articles){
+    private void handleArticles(Elements articles){
         for (Element article : articles) {
             String link;
 
             try {
                 link = getAbsoluteLink(article);
             }catch (Exception e){
+                logger.logError("Could not get link: " + e.getMessage(), e);
                 continue;
             }
 
             String title = getTitle(article);
+            long timestamp = getArticleTS(article);
+
+            if(!this.isHistorical){
+                long now = System.currentTimeMillis();
+                if(timestamp <= now - MAX_AGE){
+                    this.isFinished = true;
+                }
+            }
 
             if (readArticlesMap.containsKey(link)) {
-                System.out.println(link + " skipped!");
+                logger.logInfo("Skipped already read link: " + link);
                 continue;
             }
 
-            long timestamp = getArticleTS(article);
             if (timestamp == -1) {
-                System.err.println("dropped");
+                logger.logWarn("Article dropped due to invalid timestamp for link: " + link);
                 continue;
             }
 
@@ -284,13 +253,6 @@ public class InvestingDotComStrategy implements Strategy {
 
             linksQueue.add(event);
             readArticlesMap.putIfAbsent(link, timestamp);
-
-            if(!this.isHistorical){
-                long now = System.currentTimeMillis();
-                if(timestamp <= now - MAX_AGE){
-                    this.isFinished = true;
-                }
-            }
         }
     }
 
@@ -312,12 +274,7 @@ public class InvestingDotComStrategy implements Strategy {
                     throw new RuntimeException(e);
                 }
                 if(event != null){
-                    handleArticle(event);
-                }
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
+                    handleEvent(event);
                 }
             }
         });
@@ -325,40 +282,49 @@ public class InvestingDotComStrategy implements Strategy {
     private void readArticleWithRetry(Event event, int maxRetries) {
         event.setContent("");
         int attempt = 0;
-        int session = 1;
-        Optional<String> pageSource = Optional.empty();
+        int driverIndex = 1;
+        Element titleEl = null;
 
         while (attempt < maxRetries){
             attempt++;
 
-            pageSource = Optional.ofNullable(getPageSourceWithRetry(event.getUrl(), session, 8));
+            Optional<String> pageSource = Optional.ofNullable(getPageSourceWithRetry(event.getUrl(), driverIndex));
 
             if(pageSource.isPresent()){
-                break;
+                Document document = Jsoup.parse(pageSource.get());
+
+                // Extract the article content
+                Element articleEl = document.getElementById("article");
+                if (articleEl != null) {
+                    event.setContent(articleEl.text());
+                }
+
+                // Extract the article title
+                titleEl = document.getElementById("articleTitle");
+                if (titleEl != null) {
+                    event.setTitle(titleEl.text());
+                    break;
+                }
+
+                if(!document.getElementsByTag("error404").isEmpty()){
+                    logger.logWarn("Article " + event.getUrl() + " read failed. Error 404. Skipping reattempt...");
+                    break;
+                }
             }
 
-            reconnectDriver(session);
+            logger.logWarn("Article " + event.getUrl() + " read failed. Attempt: " + attempt);
+            try {
+                Thread.sleep((int) Math.pow(2, attempt) * 1000L);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
         }
 
-        if(pageSource.isEmpty()){
-            System.err.println(this.asset.getName() + ": Failed to read article: " + event.getUrl());
-            return;
-        }
-
-        Document document = Jsoup.parse(pageSource.get());
-
-        // Extract the article title
-        Element titleEl = document.getElementById("articleTitle");
-        if (titleEl != null) {
-            event.setTitle(titleEl.text());
-        }
-        // Extract the article content
-        Element articleEl = document.getElementById("article");
-        if (articleEl != null) {
-            event.setContent(articleEl.text());
+        if(titleEl == null){
+            logger.logWarn("Failed to read article: " + event.getUrl());
         }
     }
-    private void handleArticle(Event event) {
+    private void handleEvent(Event event) {
         readArticleWithRetry(event, 12);
 
         event.setId(UUID.randomUUID().toString());
@@ -367,8 +333,9 @@ public class InvestingDotComStrategy implements Strategy {
             sendUpdateToKafka(event);
             persistEvent(event);
             readArticlesMap.replace(event.getUrl(), event.getTimestamp());
+            logger.logInfo("Successfully read article: " + event.getUrl());
         } else {
-            System.err.println(this.asset.getName() + ": event dropped");
+            logger.logWarn("Event dropped: " + event.getUrl());
         }
     }
     private void loadReadArticlesFromCsvFile(String assetPath) {
@@ -387,18 +354,18 @@ public class InvestingDotComStrategy implements Strategy {
                             readArticlesMap.putIfAbsent(url, ts);
                             count++;
                         } catch (NumberFormatException nfe) {
-                            System.err.println("Invalid timestamp on line " + (count+1) + ": " + parts[1]);
+                            logger.logWarn("Invalid timestamp on line " + (count+1) + ": " + parts[1]);
                         }
                     } else {
-                        System.err.println("Skipping malformed line " + (count+1) + ": " + line);
+                        logger.logWarn("Skipping malformed line " + (count+1) + ": " + line);
                     }
                 }
                 line = reader.readLine();
             }
-            System.out.println("Loaded " + count + " entries from CSV file.");
-            System.out.println("readArticlesMap now has " + readArticlesMap.size() + " entries.");
+            logger.logInfo("Loaded " + count + " entries from CSV file.");
+            logger.logInfo("readArticlesMap now has " + readArticlesMap.size() + " entries.");
         } catch (IOException e) {
-            System.err.println("Failed to read CSV '" + assetPath + "': " + e.getMessage());
+            logger.logError("Failed to read CSV '" + assetPath + "': " + e.getMessage(), e);
         }
     }
 
@@ -448,16 +415,9 @@ public class InvestingDotComStrategy implements Strategy {
         } catch (Exception ignore) {}
 
         try {
-            // Case 3: plain local date-time, assume site’s default zone
+            // Case 3: plain local date-time, assume site's default zone
             LocalDateTime ldt = LocalDateTime.parse(dtStr, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-            return ldt.atZone(ZoneId.of("America/New_York"))  // or asset.getZoneId()
-                    .toInstant().toEpochMilli();
-        } catch (Exception ignore) {}
-
-        try {
-            // Case 3: plain local date-time, assume site’s default zone
-            LocalDateTime ldt = LocalDateTime.parse(dtStr, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-            return ldt.atZone(ZoneId.of("America/New_York"))  // or asset.getZoneId()
+            return ldt.atZone(ZoneId.of("America/New_York"))
                     .toInstant().toEpochMilli();
         } catch (Exception ignore) {}
 
@@ -465,20 +425,19 @@ public class InvestingDotComStrategy implements Strategy {
             // Case 4: yyyy-MM-dd HH:mm:ss format
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
             LocalDateTime dateTime = LocalDateTime.parse(dtStr, formatter);
-
             return dateTime.atZone(ZoneId.of("America/New_York"))
                     .toInstant()
                     .toEpochMilli();
         } catch (Exception ignore) {}
 
-        System.err.println(this.asset.getName() + ": couldn't parse datetime '" + dtStr + "'");
+        logger.logWarn("Couldn't parse datetime '" + dtStr + "'");
         return -1;
     }
     private void persistEvent(Event event){
         try {
             bufferedWriter.write(event.getUrl() + "," + event.getTimestamp() + "\n");
         } catch (IOException e) {
-            System.err.println("ERROR: " + e.getMessage());
+            logger.logError("Failed to persist event: " + e.getMessage(), e);
         }
     }
     private void sendUpdateToKafka(Event event){

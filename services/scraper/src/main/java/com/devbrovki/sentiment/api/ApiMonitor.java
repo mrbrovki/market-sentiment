@@ -17,10 +17,15 @@ public class ApiMonitor {
         this.strategies = strategies;
     }
 
-    @Scheduled(fixedDelay = 180_000, initialDelay = 0)
+    @Scheduled(fixedDelay = 3600_000, initialDelay = 120_000)
     public void monitorApis() {
         for (Strategy strategy : strategies) {
             executorService.submit(()->{
+                try {
+                    Thread.sleep(Math.round(Math.random() * 600_000));
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
                 if(strategy.isFinished()){
                     strategy.execute();
                 }

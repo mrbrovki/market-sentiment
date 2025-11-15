@@ -9,5 +9,5 @@ public interface Strategy {
     void cleanup();
     boolean isFinished();
 
-    void init(Asset asset, List<String> userAgents);
+    void initAsset(Asset asset);
 }

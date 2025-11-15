@@ -13,7 +13,7 @@ public class Listener {
     private final ApplicationContext applicationContext;
     private final List<Strategy> strategies;
 
-    public Listener(ApplicationContext applicationContext,List<Strategy> strategies) {
+    public Listener(ApplicationContext applicationContext, List<Strategy> strategies) {
         this.applicationContext = applicationContext;
         this.strategies = strategies;
     }
@@ -21,16 +21,20 @@ public class Listener {
     @KafkaListener(topics = "assets", groupId = "scraper", containerFactory = "kafkaListenerContainerFactoryAsset")
     public void listenEvents(ConsumerRecord<String, Asset> consumerRecord) {
         Asset asset = consumerRecord.value();
+        switch (asset.getSource()){
+            case "https://www.investing.com":
+                InvestingDotComStrategy strategy =
+                        applicationContext.getBean(InvestingDotComStrategy.class);
+                Context investingContext = new Context();
+                investingContext.setAsset(asset);
+                investingContext.init(strategy);
 
-        InvestingDotComStrategy strategy =
-                applicationContext.getBean(InvestingDotComStrategy.class);
-        Context investingContext = new Context();
+                System.out.println("Received new assets: " + asset.getName());
 
-        investingContext.setAsset(asset);
-        investingContext.init(strategy);
-
-        System.out.println("Received new assets: " + asset.getName());
-
-        strategies.add(strategy);
+                strategies.add(strategy);
+                break;
+            default:
+                throw new IllegalStateException("Unexpected value: " + asset.getSource());
+        }
     }
 }
