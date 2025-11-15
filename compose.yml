@@ -92,12 +92,14 @@ services:
 
       # override default max sessions
       - SE_NODE_OVERRIDE_MAX_SESSIONS=true
-      - SE_NODE_MAX_SESSIONS=2
-      - SE_NODE_MAX_INSTANCES=2
-      - SE_NODE_SESSION_TIMEOUT=300000000
+      - SE_NODE_MAX_SESSIONS=6
+      - SE_NODE_MAX_INSTANCES=6
+      - SE_NODE_SESSION_TIMEOUT=600000
+      - SE_SESSION_REQUEST_TIMEOUT=1200000
+      - SE_SESSION_CREATION_TIMEOUT=60000  
     shm_size: 2g            # required for Firefox stability
-    mem_limit: 1g           # hard memory cap
-    mem_reservation: 1g  # soft memory cap
+    mem_limit: 5g           # hard memory cap
+    mem_reservation: 3g       # soft memory cap
 
   scraper:
     logging: *default-logging
@@ -108,7 +110,9 @@ services:
       - CRYPTO_PANIC_KEY=${CRYPTO_PANIC_KEY}
       - BOOTSTRAP_SERVERS=kafka:9092
       - SELENIUM_URL=http://selenium-hub:4444/wd/hub
-      - QUEUE_INIT_TIME=3600000
+      - QUEUE_INIT_TIME=7200000
+      - MAX_SESSIONS=16
+      - PAGE_LOAD_MAX_RETRIES=25
     volumes:
       - scraper:/app/db
     depends_on:
