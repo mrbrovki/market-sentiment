@@ -127,10 +127,12 @@ public class Selenium {
     // synchronous driver creation used as fallback
     private WebDriver createDriverSync() {
         try {
-            return RemoteWebDriver.builder()
+            WebDriver driver = RemoteWebDriver.builder()
                     .oneOf(options)
                     .address(URI.create(remoteWebDriverUrl))
                     .build();
+            activeSessions.incrementAndGet();
+            return driver;
         } catch (WebDriverException e) {
             logger.logError("Failed to create driver synchronously", e);
             return null;
