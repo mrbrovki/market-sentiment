@@ -53,7 +53,14 @@ public class Selenium {
         this.sessionPool = new LinkedBlockingQueue<>(MAX_SESSIONS);
         initOptions();
 
-        executorService.submit(this::populateSessionPool);
+        executorService.submit(()->{
+            try {
+                populateSessionPool();
+            }catch (InterruptedException e){
+                Thread.currentThread().interrupt();
+                logger.logWarn("populateSessionPool interrupted");
+            }
+        });
     }
 
     @PreDestroy
@@ -69,27 +76,24 @@ public class Selenium {
         sessionPool.clear();
     }
 
-    private void populateSessionPool(){
-        long backoff = 5_000L; // initial backoff 5s
+    private void populateSessionPool() throws InterruptedException {
         while (running.get() && !Thread.currentThread().isInterrupted()) {
-            try {
-                if (activeSessions.get() < MAX_SESSIONS) {
-                    boolean success = addSessionToPool();
-                    if (success) {
-                        activeSessions.incrementAndGet();
-                        backoff = 5_000L; // reset on success
-                    } else {
-                        // apply capped exponential backoff with jitter
-                        Thread.sleep(backoff + (long)(Math.random() * 1_000));
-                        backoff = Math.min(backoff * 2, 60_000L);
-                    }
-                } else {
-                    Thread.sleep(5_000L);
+            int currentActiveSessions = activeSessions.get();
+
+            if(currentActiveSessions < MAX_SESSIONS){
+                int emptySlots = MAX_SESSIONS - activeSessions.getAndUpdate(v -> MAX_SESSIONS);
+
+                for (int i = 0; i < emptySlots; i++) {
+                    executorService.submit(()->{
+                        boolean success = addSessionToPool();
+                        if(!success){
+                            activeSessions.decrementAndGet();
+                        }
+                    });
                 }
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                break;
             }
+
+            Thread.sleep(5_000);
         }
     }
 
@@ -124,21 +128,6 @@ public class Selenium {
         }
     }
 
-    // synchronous driver creation used as fallback
-    private WebDriver createDriverSync() {
-        try {
-            WebDriver driver = RemoteWebDriver.builder()
-                    .oneOf(options)
-                    .address(URI.create(remoteWebDriverUrl))
-                    .build();
-            activeSessions.incrementAndGet();
-            return driver;
-        } catch (WebDriverException e) {
-            logger.logError("Failed to create driver synchronously", e);
-            return null;
-        }
-    }
-
     private void cleanupDriver(WebDriver driver) {
         try{
             if(driver != null) driver.quit();
@@ -152,11 +141,7 @@ public class Selenium {
 
     private WebDriver getDriverFromPool() {
         try {
-            WebDriver driver = sessionPool.poll(60, TimeUnit.SECONDS);
-            if (driver == null) {
-                logger.logWarn("Timed out waiting for driver from pool after 60s");
-            }
-            return driver;
+            return sessionPool.take();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.logWarn("Interrupted while waiting for driver from pool");
@@ -168,11 +153,7 @@ public class Selenium {
         executorService.submit(()->{
             cleanupDriver(oldDriver);
         });
-        WebDriver driver = getDriverFromPool();
-        if(driver == null) {
-            driver = createDriverSync();
-        }
-        return driver;
+        return getDriverFromPool();
     }
 
     public void clearBrowserState(WebDriver driver) {
